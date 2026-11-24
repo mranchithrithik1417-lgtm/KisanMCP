@@ -1,171 +1,201 @@
-# KisanClaim MCP
+# 🌾 KisanClaim MCP
 
-**An MCP-powered agent that helps a farmer file a crop-damage insurance claim from a simple chat message, backed by satellite and rainfall evidence, with the farmer always in control.**
-
-wHACKiest 2026 · Track 01: Make MCP Matter · Team: Error 404 : Idea found
-
-> **Status: blueprint.** This repository holds the plan, architecture and specifications for the 24-hour build on 1-2 December 2026. Implementation starts on hack day.
+> **wHACKiest 2026 — Track 1: "Make MCP Matter"**  
+> An autonomous, farmer-friendly crop insurance claim adjudication system that uses the **Model Context Protocol (MCP)** to gather real satellite and rainfall evidence, verify geotagged field photos, and enforce a strict human confirmation gate before filing.
 
 ---
 
-## 1. Problem
+## 🌟 What It Is
+When floods, droughts, or storms ravage crops in rural India, smallholder farmers often struggle through weeks of bureaucratic paper delays under PMFBY (Pradhan Mantri Fasal Bima Yojana). 
 
-After a flood or drought, a farmer must report the damage quickly and prove it. Under crop insurance schemes such as PMFBY, this still means forms, field surveys and weeks of waiting.
+**KisanClaim MCP** bridges the divide:
+- A rural farmer marks their 4-corner field boundaries on high-resolution satellite imagery or simply speaks to the AI assistant in **Kannada (ಕನ್ನಡ)** or **English**.
+- The AI assistant invokes **real MCP tools over stdio** to query Sentinel-2 satellite vegetation drop (NDVI) and Open-Meteo precipitation records.
+- Farmers capture geotagged field photos stamped with **India Post's 10-character DIGIPIN**, GPS coordinates, and timestamp.
+- **The Core Security Gate**: The assistant drafts the claim and issues a single-use token; the claim is **strictly barred from submission until the farmer inspects the summary and clicks "Yes, file my claim"**.
+- An instant, rule-based verification score (0–100) and downloadable official ReportLab PDF dossier are generated with a QR code linking to the live claim status.
 
-- Millions of smallholder farmers are insured, but many struggle with English or Hindi forms and online portals.
-- Insurers cannot easily tell genuine claims from fake ones, because photos are easy to fake and field visits are slow.
-- Existing portals and apps depend on manual forms and visits, with no plot-level satellite proof and no chat or voice filing.
+---
 
-## 2. Solution
+## 📸 Screenshot-Style Feature List
 
-A farmer sends one message, by chat or voice, in Kannada or English. An AI agent uses **MCP tools** to:
+| Feature | Visual Description |
+| :--- | :--- |
+| **📱 Farmer-First Mobile UI** | Earthy high-contrast palette (`#2E7D32` forest green, `#F9A825` warm amber, `#FFF8E1` cream). Big 56px touch targets, step progress indicator, and plain language. |
+| **🌐 Bilingual (EN / ಕನ್ನಡ)** | One-click toggle between English and Kannada on every screen. All UI labels and assistant messages fully translated. |
+| **🔊 Regional Voice Accessibility** | In-browser `speechSynthesis` (`kn-IN` and `en-IN`) with "Listen" buttons on every key screen, plus voice mic button (`webkitSpeechRecognition`) for conversational claim filing. |
+| **🗺️ Plot Marking & Live Shapely Math** | Leaflet satellite map (Esri World Imagery). Farmers tap 4 corners and drag pins to adjust. Live area (acres) and perimeter (m) calculated via Shapely projection. |
+| **📮 DIGIPIN Geo-Addressing** | Encodes the plot center into India Post's 10-level hierarchical grid (`XXX-XXX-XXXX`), enabling surveyors to pinpoint rural plots without ambiguous land titles. |
+| **🛰️ Satellite NDVI Crop Loss** | Sentinel-2 STAC API query with fallback. Compares pre- and post-disaster NDVI with percentage drop and interactive before/after visual cards. Always clearly badged as *Live satellite data* or *Sample data (demo)*. |
+| **🌧️ Rainfall Anomaly Engine** | Open-Meteo precipitation archive API with SQLite caching. Automatically flags flash flood spikes (≥ 50 mm/day or ≥ 100 mm window) and severe drought deficits (< 10 mm). |
+| **📷 Geotagged Camera Canvas** | In-browser camera (`getUserMedia`, back camera preferred) with canvas watermark overlaying GPS, DIGIPIN, farmer name, and timestamp. Verifies coordinates against a 400 m plot perimeter buffer. |
+| **🔒 Gated One-Time Token** | MCP tool `draft_claim()` issues a 30-minute confirmation token. MCP tool `submit_claim()` strictly refuses to execute without this valid, unconsumed token. |
+| **📄 ReportLab PDF Dossier** | Generates a complete claim dossier PDF featuring farmer details, DIGIPIN, NDVI before/after table, rainfall breakdown, stamped field photo, rule score reasons, indicative payout, and status QR code. |
+| **🛡️ Insurer Adjudication Portal** | Separate `/insurer` console for surveyors to review evidence, inspect audit trails, and approve or reject claims with recorded notes. |
 
-1. find the farmer's plot (DIGIPIN and drawn boundary),
-2. collect satellite vegetation change and rainfall evidence,
-3. check that photo evidence was taken inside the plot,
-4. draft the claim and show it to the farmer,
-5. file the claim **only after the farmer confirms**,
-6. return a PDF report with a QR code, while insurers review the claim in a console with verification agents.
+---
 
-**What makes it "MCP that matters":** it works where people already are (a chat app), connects the tools they need, and every action that changes something is controlled, confirmed and logged.
-
-## 3. Architecture
+## 🏗️ Architecture Diagram
 
 ```mermaid
-flowchart LR
-    F[Farmer<br/>Telegram / web / voice] --> A[AI agent<br/>MCP client]
-    A --> M
-
-    subgraph M[MCP server - FastMCP]
-        R[Read tools<br/>find_plot, get_satellite_change,<br/>get_rainfall, check_photo_location,<br/>get_claim_status]
-        W[Write tools<br/>draft_claim, submit_claim,<br/>generate_report]
-        G{{Confirm gate<br/>+ audit log}}
-        W --> G
+flowchart TD
+    subgraph FarmerApp["Farmer Mobile Interface (React 18 + Leaflet)"]
+        UI_Map["Esri Satellite Plot Marker (Shapely)"]
+        UI_Cam["Canvas Geotagged Stamper (GPS + DIGIPIN)"]
+        UI_Voice["Voice TTS (kn-IN & en-IN) & Mic"]
+        UI_Confirm["Explicit Token Confirmation Gate"]
     end
 
-    R --> E1[Geospatial<br/>DIGIPIN, boundary area]
-    R --> E2[Satellite<br/>Sentinel-2 NDVI / NDWI]
-    R --> E3[Weather<br/>Open-Meteo ERA5]
-    G --> DB[(Database<br/>SQLite)]
-    W --> S3[(AWS S3<br/>photos and PDFs)]
-    DB --> I[Insurer console<br/>6 verification agents]
-    I --> P[Claim PDF + QR code]
-    P --> F
+    subgraph BackendAPI["FastAPI Backend (Port 8000)"]
+        REST["REST API Endpoints (/api/*)"]
+        AgentCore["Guided State Machine / MCP Client"]
+        LocalDB[(SQLite kisanclaim.db)]
+    end
+
+    subgraph MCPServer["FastMCP Server (stdio Subprocess)"]
+        Tools["8 Registered MCP Tools"]
+        AuditLog["Immutable tool_audit_log Ledger"]
+    end
+
+    subgraph ServiceEngines["Shared Business Logic (backend/services/)"]
+        S_Digipin["DIGIPIN 10-Level Hierarchical Geocoder"]
+        S_Geo["Shapely Projected Area & Perimeter Engine"]
+        S_Sat["Sentinel-2 STAC / NDVI Loss Analysis"]
+        S_Rain["Open-Meteo Archive API + SQLite Cache"]
+        S_Photo["400m Buffer Geofence Verifier"]
+        S_Score["Rule Scoring Engine (0-100)"]
+        S_PDF["ReportLab PDF Dossier Generator + QR"]
+    end
+
+    subgraph InsurerPortal["Insurer Review Console (/insurer)"]
+        I_Review["Claims Queue & Evidence Inspection"]
+        I_Audit["MCP Tool Audit Trail Viewer"]
+        I_Action["Approve / Reject / Note Adjudication"]
+    end
+
+    FarmerApp <--> REST
+    REST <--> AgentCore
+    AgentCore <--> Tools
+    Tools <--> ServiceEngines
+    ServiceEngines <--> LocalDB
+    Tools --> AuditLog
+    AuditLog --> LocalDB
+    InsurerPortal <--> REST
 ```
 
-**Process flow:** Input (farmer message) → Processing (tools gather evidence) → Confirm (farmer approves draft) → Output (claim filed and PDF report).
+---
 
-### Claim sequence
+## 🛠️ The 8 MCP Tools
 
-```mermaid
-sequenceDiagram
-    participant Farmer
-    participant Agent as AI agent
-    participant MCP as MCP server
-    participant DB as Database
-    Farmer->>Agent: "My field flooded, file a claim"
-    Agent->>MCP: find_plot(digipin)
-    Agent->>MCP: get_satellite_change(plot, dates)
-    Agent->>MCP: get_rainfall(plot, dates)
-    Agent->>MCP: draft_claim(...)
-    MCP->>DB: save draft + one-time token
-    MCP-->>Agent: draft summary
-    Agent-->>Farmer: Shows draft, asks to confirm
-    Farmer->>Agent: "Yes, confirm"
-    Agent->>MCP: submit_claim(draft_id, token)
-    MCP->>DB: verify token, file claim, log call
-    MCP-->>Farmer: PDF report with QR code
+In `mcp_server/server.py`, 8 typed tools are exposed over stdio via the official Python MCP SDK (`FastMCP`). Every tool call writes an immutable entry into `tool_audit_log`:
+
+| Tool Name | Type | Description |
+| :--- | :--- | :--- |
+| `find_plot(farmer_id)` | Read | Retrieves farmer's registered plot: polygon, area (acres), perimeter, DIGIPIN, and survey number. |
+| `get_satellite_change(plot_id, before_date, after_date)` | Read | Returns Sentinel-2 NDVI before/after values, percentage change, and source flag (`LIVE` or `SAMPLE`). |
+| `get_rainfall(plot_id, start_date, end_date, disaster_type)` | Read | Fetches daily rainfall from Open-Meteo, calculates window total, max daily spike, and evaluates disaster anomalies. |
+| `check_photo_location(plot_id, lat, lon)` | Read | Calculates distance in meters from plot boundary and returns whether photo is within 400 m buffer (`passed: true/false`). |
+| `get_claim_status(claim_id)` | Read | Retrieves current adjudication status, insurer notes, score, and PDF path. |
+| `draft_claim(plot_id, crop, disaster_type, disaster_date, loss_percent)` | Write | Saves claim draft and issues a 30-minute confirmation token. **Does not submit anything.** |
+| `submit_claim(draft_id, token)` | Write, **Gated** | **Security Gate**: Verifies token exists, is unused, and is unexpired (< 30 min). Executes rule score, marks token used, and submits claim. **Strictly rejects without valid token.** |
+| `generate_report(claim_id)` | Write | Builds comprehensive ReportLab PDF dossier with QR code and returns file path and download URL. |
+
+---
+
+## 🚀 How to Run in Under 5 Steps
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+ (tested on Node v20)
+
+### 1. Clone & Enter Project
+```bash
+git clone <repo-url>
+cd kisanclaim-mcp
 ```
 
-## 4. MCP tool specification
-
-| Tool | Type | Purpose | Main inputs | Output |
-|---|---|---|---|---|
-| `find_plot` | Read | Locate a plot by DIGIPIN or coordinates | `digipin` or `lat, lon` | plot id, boundary, area |
-| `get_satellite_change` | Read | Vegetation and water change from Sentinel-2 | `plot_id, before_date, after_date` | NDVI before/after, NDWI, % change |
-| `get_rainfall` | Read | Rainfall and soil moisture for the event | `plot_id, start, end` | daily rainfall, anomaly flag |
-| `check_photo_location` | Read | Is a geotagged photo inside the plot area? | `plot_id, lat, lon` | distance in metres, pass or fail |
-| `get_claim_status` | Read | Current status of a claim | `claim_id` | status, decision |
-| `draft_claim` | Write | Prepare a claim, change nothing yet | plot, crop, disaster type, loss declared | draft id + one-time token + summary |
-| `submit_claim` | Write, **gated** | File the claim after farmer approval | `draft_id, token` | claim id |
-| `generate_report` | Write | Build the PDF dossier with QR code | `claim_id` | PDF link |
-
-## 5. Controls ("controlled and reliable")
-
-- **Confirm gate:** `submit_claim` rejects any call without a valid one-time token, and the token is issued only after the farmer says yes.
-- **Read vs write separation:** read tools run freely, write tools are limited and checked.
-- **Audit log:** every tool call is stored with time, inputs and result.
-- **Grounded answers:** numbers shown to the farmer come only from tool results, never invented.
-- **Indicative scores:** satellite and rainfall evidence supports the decision; a human insurer adjudicates.
-
-## 6. Data model (SQLite)
-
-| Table | Main fields |
-|---|---|
-| `farmers` | id, name, phone, language |
-| `plots` | id, farmer_id, digipin, boundary points, area |
-| `claim_drafts` | id, plot_id, crop, disaster type, loss declared, token, expires_at |
-| `claims` | id, draft_id, status, estimated payout, pdf_url, decision |
-| `evidence` | id, claim_id, type (satellite, rainfall, photo), values, file_url |
-| `tool_audit_log` | id, tool, inputs, result, time |
-
-## 7. Tech stack
-
-| Layer | Technology | Why |
-|---|---|---|
-| Frontend | React, TypeScript, Vite, Tailwind, Leaflet | farmer dashboard, insurer console, map plot marking |
-| Backend | Python, FastAPI, OpenCV, Pillow | geospatial, report and QR modules in one service |
-| MCP layer | Python MCP SDK (FastMCP) | standard, typed tools for any AI agent |
-| AI and voice | LLM agent as MCP client, ElevenLabs | natural-language filing; Kannada and English voice |
-| Data sources | Sentinel-2 L2A, Open-Meteo ERA5, DIGIPIN | free, open data for plot-level proof |
-| Storage | SQLite, AWS S3 | claims, tokens and audit trail; photos and PDFs |
-| Chat | Telegram bot | an everyday app farmers already use |
-
-**Sponsor use:** ElevenLabs (voice replies) and AWS (S3 storage).
-
-## 8. 24-hour build plan
-
-| Hours | Goal |
-|---|---|
-| 0-2 | Repo setup, database schema, MCP server skeleton |
-| 2-6 | Read tools: plots, satellite change, rainfall, photo location |
-| 6-10 | Draft, confirm gate, submit, audit log |
-| 10-14 | Telegram bot and AI agent connected to the MCP server |
-| 14-17 | ElevenLabs voice replies in Kannada and English |
-| 17-20 | PDF report with QR code, insurer console view |
-| 20-22 | Real data check, error handling, demo data |
-| 22-24 | Demo rehearsal and README polish |
-
-## 9. Impact and measures
-
-- Farmers file in minutes, in their own language.
-- Insurers verify with evidence instead of guesswork.
-- We will measure: time to file a claim, share of claims corroborated by satellite and rainfall data, and fraud flags raised.
-- Scales to any crop or state with Sentinel-2 and DIGIPIN coverage.
-
-## 10. Risks and fixes
-
-| Risk | Plan |
-|---|---|
-| Cloud cover hides the field in satellite images | use rainfall data and geotagged photos as backup |
-| Estimates can be wrong | show as indicative; human adjudication decides |
-| Agent misuse or mistakes | confirm gate, scoped tools, audit log |
-| API rate limits | cache results |
-
-## 11. Business model
-
-- **Customers:** insurers and PMFBY implementing agencies, banks and cooperatives, farmer producer organisations. Farmers are free users.
-- **Revenue:** per-claim verification fee or subscription for insurers, plus API access for agri-fintech partners.
-- **Go-to-market:** pilot in one district with a cooperative or FPO and an insurer, reaching farmers through chat.
-
-## 12. Planned repository layout
-
+### 2. Copy Environment File
+```bash
+cp .env.example .env
+# Windows Command Prompt:
+# copy .env.example .env
 ```
-kisanclaim-mcp/
-├── mcp_server/        # FastMCP server, tools, confirm gate, audit log
-├── backend/           # FastAPI service, geospatial and report modules
-├── bot/               # Telegram bot and agent client
-├── frontend/          # farmer dashboard and insurer console
-├── docs/              # diagrams and notes
-└── README.md
+
+### 3. Run the Launcher Script
+```bash
+# On Linux / macOS:
+chmod +x start.sh
+./start.sh
+
+# On Windows:
+start.bat
 ```
+
+The script automatically sets up the Python virtual environment, installs backend and frontend packages, seeds the database, and launches:
+- **Farmer Web App**: `http://localhost:5173`
+- **Insurer Review Console**: `http://localhost:5173` *(Click "Insurer Console" button in header)*
+- **Backend API & Swagger Docs**: `http://localhost:8000/docs`
+
+### 4. Run Pytest Suite
+```bash
+# Windows
+venv\Scripts\python -m pytest backend/tests
+
+# Linux/macOS
+venv/bin/pytest backend/tests
+```
+*All 16 tests pass: DIGIPIN round-trip, Shapely area, geofence buffer, rule scoring, and token gate verification.*
+
+---
+
+## 🎬 Demo Script (3-Minute Walkthrough)
+
+Follow these exact clicks for an end-to-end demo:
+
+1. **Login (15 sec)**:
+   - Open `http://localhost:5173` in a mobile-sized browser window.
+   - Click the big amber button: **"Instant Login as Demo Farmer (Ravi Kumar)"**.
+   - Notice the greeting banner showing registered plot area (6.81 Acres) and DIGIPIN `4PC-MK3-J434`.
+   - Click the language toggle (`ಕನ್ನಡ` / `English`) in the top-right header to show instant translation.
+   - Click the speaker button to hear the Kannada voice read the greeting aloud.
+
+2. **File a Claim Workflow (60 sec)**:
+   - Click the big green button: **"File a New Claim"**.
+   - **Step 1 (Plot)**: The Leaflet satellite map appears with Devanahalli coordinates. Drag pin #1 slightly. Notice live area (acres) and perimeter recalculating in real-time. Click **"Save Plot & Compute DIGIPIN"**.
+   - **Step 2 (Evidence)**: The app calls `get_satellite_change` and `get_rainfall`. Notice the visible **"Sample data (demo)"** or **"Live satellite data"** badge, the NDVI comparison (-47.2%), and the Open-Meteo rainfall spike chart. Click **"Proceed to Field Photo"**.
+   - **Step 3 (Camera)**: The camera screen activates with live GPS. Click **"Capture Photo"** (or upload). Notice the digital canvas watermark stamped across the bottom (`GPS`, `DIGIPIN`, `Farmer Name`, `Date/Time`). The geofence checker displays: *"Photo is inside your field (PASSED)"*. Click **"Attach Photo to Claim"**.
+   - **Step 4 (Confirm Gate)**: Notice the one-time confirmation token displayed (`TOK-XXXX`). The indicative payout shows **₹15,000.00** with the disclaimer. Click the big green button: **"Yes, File My Claim"**.
+
+3. **Instant Verification & PDF (30 sec)**:
+   - **Step 5 (Done)**: The verification score card renders **85/100** with rule reasons.
+   - Click **"Download Official PDF Dossier"**. A new tab opens with the ReportLab PDF complete with the farmer's details, NDVI table, rainfall bars, geotagged photo, and scan-ready QR code.
+
+4. **Insurer Adjudication & Audit Log (45 sec)**:
+   - In the header, click **"Insurer Console"**.
+   - The claims dashboard lists all claims with statuses and scores. Click **"Review"** on the newly submitted claim.
+   - Inspect the evidence and the **immutable SQLite MCP Tool Execution Audit Trail** showing every tool call (`find_plot`, `get_satellite_change`, `get_rainfall`, `check_photo_location`, `draft_claim`, `submit_claim`, `generate_report`).
+   - Type a note *"Field verified by surveyor"* and click **"Approve Claim"**.
+   - Switch back to the Farmer view; the claim now displays a green **"Approved"** status chip.
+
+---
+
+## ⚠️ Honest List of Limitations
+
+1. **DIGIPIN Implementation**:  
+   > [!IMPORTANT]  
+   > *Verify against India Post's official DIGIPIN specification before real production use.* Our implementation uses a 10-level hierarchical $4 \times 4$ bounding box grid ($2.5^\circ$ to $38.5^\circ$ N, $63.5^\circ$ to $99.5^\circ$ E) achieving $\approx 4\text{ m}$ precision, which round-trips accurately in our test suite.
+
+2. **Satellite Live vs. Sample Fallback**:  
+   Sentinel-2 L2A STAC APIs may suffer from cloud obscuration, latency (> 20s), or rate limits. When `DEMO_MODE=true` or when cloud cover exceeds 35%, the service falls back to deterministic sample NDVI. **Sample data is always clearly labelled with a visible badge.**
+
+3. **No Real SMS OTP**:  
+   To allow rapid, reliable offline evaluation during hackathon judging, farmer login uses phone number and name without a third-party SMS gateway.
+
+4. **Indicative Payout Disclaimer**:  
+   > [!NOTE]  
+   > *All calculated payouts (e.g. $\text{acres} \times \text{Scale of Finance} \times \text{loss}\%$) are indicative algorithmic estimates, not official PMFBY disbursements.* Final claim sanctions under PMFBY require insurer underwriter signoff.
+
+---
+
+## 📜 License
+Built with ❤️ for wHACKiest 2026. Open source under the MIT License.
