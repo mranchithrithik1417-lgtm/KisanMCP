@@ -1,5 +1,6 @@
 # 🌾 KisanClaim MCP
 
+
 > **wHACKiest 2026 — Track 1: "Make MCP Matter"**  
 > An autonomous, farmer-friendly crop insurance claim adjudication system that uses the **Model Context Protocol (MCP)** to gather real satellite and rainfall evidence, verify geotagged field photos, and enforce a strict human confirmation gate before filing.
 
